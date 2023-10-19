@@ -1,0 +1,34 @@
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Account</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css">              
+</head>
+<body>
+<div class="container">
+	<div class="row">	
+		<h1>User Profile</h1>
+    </div>
+       <item>
+        <div>
+        <h1>Réclamations</h1>
+        <ul>
+            {% for reclamation in reclamations %}
+            <li>{{ reclamation.nom }} -  - {% if admin %}{{ reclamation.message }}{% else %}{{ reclamation.encrypted_message }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+        
+        <a href="/add_reclamation">Ajouter une réclamation</a>
+    </div>
+    </item>
+	
+	<br>
+	<div class="row">	
+		Logged in : <strong>{{session.name}} | <a href="{{ url_for('logout') }}"> Logout</a>
+	</div>
+	<br><br>
+			
+</div>
+</body>
+</html>
