@@ -1,14 +1,21 @@
 import re
-import subprocess
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from passlib.hash import sha256_crypt
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
-import os 
+from datetime import datetime
+
+
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
 app.secret_key = 'xyz'
+
+#La longueur de la clé générée par Fernet est de 32 octets (256 bits)
+key = Fernet.generate_key()
+
+
 
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
@@ -109,6 +116,25 @@ def manager():
     return redirect(url_for('login'))
 
 
+@app.route('/add_reclamation', methods=['GET', 'POST'])
+def reclamation():
+    if request.method == 'POST':
+        nom = request.form['nom']
+        message = request.form['message']
+
+        fernet = Fernet(key)
+        encrypted_message = fernet.encrypt(message.encode())
+
+        # Ajout de la réclamation à la base de données avec la date de création
+        cursor = mysql.connection.cursor()
+        cursor.execute("INSERT INTO reclamations (nom, encrypted_message, date_creation) VALUES (%s, %s, %s)",
+                       (nom, encrypted_message, datetime.now()))
+        mysql.connection.commit()
+
+        # Ajoutez la réclamation à la liste (facultatif)
+        reclamations.append({'nom': nom, 'encrypted_message': encrypted_message})
+
+    return render_template('reclamation.html')
 
 
 @app.route('/admin')
@@ -116,70 +142,28 @@ def admin():
     if 'loggedin' in session and session['role'].lower() == 'admin':
         # Récupérez les réclamations depuis la base de données
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute("SELECT nom, message FROM reclamations")
+        cursor.execute("SELECT id, nom, encrypted_message FROM reclamations")
         reclamations_data = cursor.fetchall()
         cursor.close()
 
-        return render_template('admin_complaints.html',  reclamations=reclamations_data)
+        # Liste pour stocker les réclamations déchiffrées
+        decrypted_reclamations = []
+
+        # Déchiffrez les messages avec la commande OpenSSL
+        for reclamation in reclamations_data:
+            ciphertext = reclamation['encrypted_message']
+            fernet = Fernet(key)
+
+            try:
+                decrypted_message = fernet.decrypt(ciphertext).decode()
+            except Exception as e:
+                print("Decryption Error:", str(e))
+                decrypted_message = "Erreur de déchiffrement"
+
+            decrypted_reclamations.append({'id': reclamation['id'], 'nom': reclamation['nom'], 'message': decrypted_message})
+
+        return render_template('admin_complaints.html', reclamations=decrypted_reclamations)
     return redirect(url_for('login'))
-
-
-
-
-
-@app.route('/add_reclamation', methods=['GET', 'POST'])
-def reclamation():
-    encrypted_message = ""
-    if request.method == 'POST':
-        nom = request.form['nom']
-        message = request.form['message']
-        
-
-
-    # Générez une clé aléatoire de 32 octets (256 bits)
-        encryption_key = os.urandom(32)
-# Convertissez la clé en une forme que vous pouvez utiliser dans la commande OpenSSL
-        encryption_key_hex = encryption_key.hex()
-
-        cmd = f'echo -n "{message}" | openssl enc -aes-256-cbc -a -salt -pass pass:{encryption_key_hex}'
-
-        # Chiffrement du message avec OpenSSL
-        # cmd = f"echo '{message}' | openssl enc -aes-256-cbc -pass pass:0000 -base64"
-        encrypted_message = subprocess.check_output(cmd, shell=True).decode().strip()
-
-
-
-
-        # # Clé de déchiffrement
-        # decryption_key = encryption_key  # Utilisez la même clé que celle utilisée pour le chiffrement
-        # decryption_key_hex = decryption_key.hex()
-        # # Utilisez OpenSSL pour déchiffrer le message
-        # cmd1 = f'echo "{encrypted_message}" | openssl  -aes-256-cbc -d -a -pass pass:{decryption_key_hex}'
-        # decrypted_message = subprocess.check_output(cmd1, shell=True ).decode().strip()
-
-
-        # Enregistrez la réclamation dans la base de données
-        cursor = mysql.connection.cursor()
-        cursor.execute("INSERT INTO reclamations (nom, message, encrypted_message ) VALUES (%s, %s, %s)",
-                       (nom,  message, encrypted_message))
-        mysql.connection.commit()
-
-        # Ajoutez la réclamation à la liste (facultatif)
-        reclamations.append({'nom': nom, 'message': message, 'encrypted_message': encrypted_message })
-
-    return render_template('reclamation.html')
-
-
-
-
-@app.route('/delete_complaint/<int:complaint_id>', methods=['POST'])
-def delete_complaint(complaint_id):
-    if 'loggedin' in session and session['role'].lower() == 'admin':
-        # Handle deleting complaints from admins
-        # ...
-        return redirect(url_for('admin'))
-    return redirect(url_for('login'))
-
 
 
 if __name__ == '__main__':
